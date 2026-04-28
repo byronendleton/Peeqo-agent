@@ -36,6 +36,7 @@ const STT_TIMEOUT_MS = 10000;
 class SttStream {
     constructor() {
         this.stream = null;
+        this.micStream = null;
         this.audioTimer = null;
         this.sttTimeout = null;
         this._sttFired = false;
@@ -43,41 +44,56 @@ class SttStream {
 
     prepare() {
         this.stream = speechClient.streamingRecognize(streamingConfig);
+
         this.stream
             .on("data", this.handleData.bind(this))
             .on("error", this.handleError.bind(this))
             .once("close", this.handleClose.bind(this));
+
         debug("STT: stream opened, waiting for audio signal");
     }
 
     startAudio() {
         this.audioTimer = setTimeout(() => {
-            const micStream = mic.getMic();
-            if (micStream) {
-                let byteCount = 0;
-                micStream.on("data", (chunk) => {
-                    byteCount += chunk.length;
-                    if (byteCount === chunk.length) {
-                        debug("STT: first audio chunk, bytes:", chunk.length);
-                    }
-                });
-                micStream.pipe(this.stream);
-            } else {
+            mic.stopMic();
+
+            this.micStream = mic.getMic();
+
+            if (!this.micStream) {
                 console.error("STT: failed to get microphone stream");
+                return;
             }
 
-            // Safety net: if the stream hasn't delivered a result or closed cleanly
-            // within STT_TIMEOUT_MS, force cleanup so the wakeword detector re-arms.
+            let byteCount = 0;
+
+            this.micStream.on("data", (chunk) => {
+                byteCount += chunk.length;
+                if (byteCount === chunk.length) {
+                    debug("STT: first audio chunk, bytes:", chunk.length);
+                }
+            });
+
+            if (this.stream && !this.stream.destroyed) {
+                this.micStream.pipe(this.stream);
+            }
+
             this.sttTimeout = setTimeout(() => {
                 if (!this._sttFired) {
                     console.warn("STT: timeout — no result received, forcing cleanup");
                     this._sttFired = true;
-                    if (this.stream) this.stream.destroy();
+
+                    this.cleanUp();
+
+                    if (this.stream && !this.stream.destroyed) {
+                        this.stream.destroy();
+                    }
+
                     mic.pause();
                     event.emit("no-command");
                     event.emit("end-speech-to-text");
                 }
             }, STT_TIMEOUT_MS);
+
         }, AUDIO_START_DELAY_MS);
     }
 
@@ -85,9 +101,14 @@ class SttStream {
         const result = data.results?.[0];
         if (!result?.isFinal) return;
 
-        this.cleanUp();
         const transcript = result.alternatives?.[0]?.transcript?.trim();
-        this.stream.end();
+
+        this.cleanUp();
+
+        if (this.stream && !this.stream.destroyed) {
+            this.stream.end();
+        }
+
         mic.pause();
 
         if (transcript) {
@@ -103,13 +124,24 @@ class SttStream {
 
     handleError(err) {
         console.error("STT error:", err);
-        if (this.stream) this.stream.end();
+
+        this.cleanUp();
+
+        if (this.stream && !this.stream.destroyed) {
+            this.stream.destroy();
+        }
+
+        mic.pause();
+        event.emit("end-speech-to-text");
     }
 
     handleClose() {
         debug("STT: stream closed");
+
         this.cleanUp();
+
         if (pendingStream === this) pendingStream = null;
+
         if (!this._sttFired) {
             event.emit("end-speech-to-text");
         }
@@ -120,12 +152,25 @@ class SttStream {
             clearTimeout(this.audioTimer);
             this.audioTimer = null;
         }
+
         if (this.sttTimeout) {
             clearTimeout(this.sttTimeout);
             this.sttTimeout = null;
         }
+
+        if (this.micStream && this.stream) {
+            try {
+                this.micStream.unpipe(this.stream);
+            } catch (e) {}
+        }
+
+        this.micStream = null;
     }
 }
+
+
+
+
 
 let pendingStream = null;
 

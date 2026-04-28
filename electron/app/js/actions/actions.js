@@ -5,7 +5,6 @@ const responses = require('js/responses/responses')
 const speak = require('js/senses/speak')
 const debug = require('js/helpers/debug')
 
-
 async function setAnswer(ans=null, overrides={}){
 
 	// @param {obj} ans - the response object as defined in responses.js

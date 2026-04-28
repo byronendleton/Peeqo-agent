@@ -35,6 +35,9 @@ if (isARM) {
   require("./servo-main").setup();
 }
 
+// Home Assistant GIF trigger service
+const haGifs = require("./app/js/services/ha-gifs");
+
 let mainWindow = null;
 
 var createWindow = () => {

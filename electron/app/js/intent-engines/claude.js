@@ -74,11 +74,11 @@ const TOOLS_ANTHROPIC = [
         },
     },
     {
-        name: "findRemoteVideo",
-        description:
-            "Search YouTube for a video and display it. " +
-            "For short reaction clips (default, ≤10s): omit maxDuration and use tightly descriptive query terms like 'excited celebration reaction', 'confused dog', 'mind blown gif'. Avoid vague queries — short clip searches need specificity to find good matches. " +
-            "For background music or full music videos the user explicitly requests: set maxDuration to 300–600. Long-form videos are interruptible — the user can say the wakeword to stop them.",
+	name: "findRemoteVideo",
+	description:
+    		"Search YouTube for a video and display it. " +
+    		"For short reaction clips (default, ≤10s): omit maxDuration and use tightly descriptive query terms like 'excited celebration reaction'. " +
+    		"For music requests: set maxDuration to 30 and prefer short, low-resolution music clips.",
         input_schema: {
             type: "object",
             properties: {
@@ -345,3 +345,4 @@ async function handleTranscript({ text }) {
 }
 
 module.exports = { handleTranscript };
+

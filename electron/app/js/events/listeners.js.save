@@ -9,34 +9,6 @@ const claude = require('js/intent-engines/claude')
 const text = require('js/senses/text')
 const mic = require('js/senses/mic')
 const process = require('process');
-let danceTimer = null;
-
-function startDance() {
-    if (danceTimer) return;
-
-    console.log("[SERVO] dance started");
-
-    function loop() {
-        const moves = ['jiggle', 'look-up', 'alert', 'look-up-slow'];
-        const move = moves[Math.floor(Math.random() * moves.length)];
-
-        event.emit('servo-move', move);
-
-        const next = 1500 + Math.random() * 2000;
-        danceTimer = setTimeout(loop, next);
-    }
-
-    loop();
-}
-
-function stopDance() {
-    if (!danceTimer) return;
-
-    clearTimeout(danceTimer);
-    danceTimer = null;
-
-    console.log("[SERVO] dance stopped");
-}
 
 document.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
@@ -52,21 +24,6 @@ module.exports = () => {
 	// Cleared by final-transcript (command heard) or end-speech-to-text (nothing heard).
 	let mediaWasPaused = false
 
-	let danceTimer = null;
-
-function startDance() {
-    if (danceTimer) return;
-    danceTimer = setInterval(() => {
-        event.emit('servo-move', 'jiggle');
-    }, 2500);
-}
-
-function stopDance() {
-    if (!danceTimer) return;
-    clearInterval(danceTimer);
-    danceTimer = null;
-}
-
 	// STATUS INDICATORS (upper-right corner)
 	const recEl = document.getElementById('status-recording')
 	const loadEl = document.getElementById('status-loading')
@@ -80,35 +37,20 @@ function stopDance() {
     debug('[indicator] final-transcript:', text)
     loadEl.className = 'active'
 
-	// Home Assistant trigger
-if (text.includes("lounge light")) {
-    console.log("[HA] toggling lounge lights");
+    // Home Assistant trigger
+    if (text.includes("lounge light")) {
+        console.log("[HA] toggling lounge lights");
 
-    fetch("http://homeassistant.local:8123/api/webhook/peeqo_lounge_lights", {
-        method: "POST"
-    });
+        fetch("http://homeassistant.local:8123/api/webhook/peeqo_lounge_lights", {
+            method: "POST"
+        });
 
-    // Show light GIF
-    event.emit("set emotion", "excited");
-
-    event.emit("set-answer", {
-        text: "Done, toggled the lounge lights.",
-        type: "text"
-    });
-
-    return;
-}
-
-})
-	event.on('show-div', (id) => {
-    if (id === 'videoWrapper' || id === 'gifWrapper') loadEl.className = '';
-
-    if (id === 'videoWrapper') startDance();
-    if (id === 'eyeWrapper') stopDance();
-    if (id === 'gifWrapper') {
-        event.emit('servo-move', 'look-up');
+        return;
     }
-});
+})y
+	event.on('show-div', (id) => {
+		if (id === 'videoWrapper' || id === 'gifWrapper') loadEl.className = ''
+	})
 	event.on('status-listening', () => { loadEl.className = '' })
 
 	event.on('wakeword', () => debug("[listeners] wakeword event received"))
@@ -116,10 +58,6 @@ if (text.includes("lounge light")) {
 	event.on('wakeword', () => { mediaWasPaused = true; event.emit('pause-media') })
 	event.on('wakeword', () => text.hideBubble())
 	event.on('wakeword', action.wakeword)
-	event.on('wakeword', () => {
-    	event.emit('servo-move', 'alert');
-})
-
 	// Open gRPC connection immediately so it's warm when audio starts
 	event.on('wakeword', stt.prepare)
 	// Emit speech-to-text at wakeword time (parallel to alert playback).
@@ -134,75 +72,7 @@ if (text.includes("lounge light")) {
 	event.on('final-transcript', () => {
 		if (mediaWasPaused) { mediaWasPaused = false; event.emit('stop-media') }
 	})
-	
-	event.on('final-transcript', (data) => {
-    const text = data.text.toLowerCase();
-
-    debug('[indicator] final-transcript:', text)
-    loadEl.className = 'active'
-
-// 🔥 Dynamic Home Assistant control
-if (text.includes("light")) {
-    let room = null;
-
-    if (text.includes("lounge")) room = "lounge";
-    if (text.includes("kitchen")) room = "kitchen";
-    if (text.includes("bedroom")) room = "bedroom";
-
-    if (room) {
-        console.log(`[HA] toggling ${room} lights`);
-
-        fetch("http://homeassistant.local:8123/api/webhook/peeqo_lights", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room })
-        }).catch(err => {
-            console.log("[HA] webhook error:", err);
-        });
-
-        event.emit("set-answer", {
-            text: "light switch turning on",
-            type: "remote",
-            loop: true,
-            minDuration: 3000
-        });
-
-        return;
-    }
-}
-
-	const transcript = text;
-	console.log("[STT transcript]", transcript);
-
-    // 🧪 Servo test commands
-    if (transcript.includes("test alert")) {
-        event.emit('servo-move', 'alert');
-        return;
-    }
-
-    if (transcript.includes("test jiggle")) {
-        event.emit('servo-move', 'jiggle');
-        return;
-    }
-
-    if (transcript.includes("test lookup")) {
-        event.emit('servo-move', 'look-up');
-        return;
-    }
-
-if (transcript.includes("slow") && transcript.includes("sway")) {
-    event.emit('servo-move', 'slow-sway');
-    return;
-}
-    // your existing stuff below...
-
-    if (transcript.includes("light")) {
-        debug("[HA] skipping Claude for light command");
-        return;
-    }
-
-    claude.handleTranscript(data);
-});
+	event.on('final-transcript', claude.handleTranscript)
 
 	event.on('show-speech-bubble', (msg) => text.showBubble(msg))
 
@@ -280,10 +150,8 @@ if (transcript.includes("slow") && transcript.includes("sway")) {
 	})
 
 	// AUDIO PLAYBACK
-	event.on('play-sound', (data) => {
-   		 startDance();
-    		speak.playSound(data);
-	});
+	event.on('play-sound', speak.playSound)
+
 	event.on('set-volume', speak.setVolume)
 
 	// BUTTON PRESSES
@@ -304,6 +172,5 @@ if (transcript.includes("slow") && transcript.includes("sway")) {
 	event.on('btn-17-long-press',  () => {})
 	event.on('btn-23-short-press', () => {})
 	event.on('btn-23-long-press',  () => {})
-
 
 }
