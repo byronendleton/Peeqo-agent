@@ -15,7 +15,8 @@
     },
     "devDependencies": {
         "@electron/rebuild": "3.7.1",
-        "electron": "35.0.3"
+        "electron": "35.0.3",
+        "nodemon": "^3.1.14"
     },
     "dependencies": {
         "@anthropic-ai/sdk": "^0.54.0",

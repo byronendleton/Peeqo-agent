@@ -1,0 +1,8 @@
+{
+  "watch": ["main.js", "app/js", "app/index.html"],
+  "ext": "js html json css",
+  "ignore": ["node_modules", "app/memories", "../logs"],
+  "delay": "500ms",
+  "exec": "pkill -9 arecord || true; DISPLAY=:0 electron ."
+}
+
