@@ -1,137 +1,233 @@
 #!/usr/bin/env python3
 """
 MJPEG HTTP camera server for Peeqo.
-Captures from /dev/video0 via ffmpeg and serves:
-  GET /stream   — multipart/x-mixed-replace MJPEG stream for live view
-  GET /snapshot — single JPEG frame for still capture
 
-Control via stdin: 'start', 'stop', 'snapshot'
-Responses on stdout: 'ready', 'started', 'stopped', 'snapshot:<path>', 'snapshot:error'
+Serves:
+  GET /stream    MJPEG live stream
+  GET /snapshot  latest JPEG frame
+
+Designed to run as a background systemd user service.
 """
-import subprocess, http.server, threading, sys, time
+
+import http.server
+import subprocess
+import threading
+import time
+import sys
+import signal
 
 PORT = 8765
-DEVICE = '/dev/video0'
-WIDTH, HEIGHT, FPS = 640, 480, 15
+HOST = "0.0.0.0"
+
+WIDTH = 640
+HEIGHT = 480
+FPS = 15
 
 _lock = threading.Lock()
 _latest_frame = None
 _ffmpeg_proc = None
-_streaming = False
+_running = True
 
 
-def _read_frames(proc):
+def log(message):
+    print(f"[camera_server] {message}", file=sys.stderr, flush=True)
+
+
+def read_frames(proc):
     global _latest_frame
-    buf = b''
-    while True:
-        chunk = proc.stdout.read(65536)
-        if not chunk:
+
+    buf = b""
+
+    while _running:
+        try:
+            chunk = proc.stdout.read(65536)
+        except Exception as e:
+            log(f"read error: {e}")
             break
+
+        if not chunk:
+            log("camera process stopped producing data")
+            break
+
         buf += chunk
-        # Extract complete JPEG frames (SOI=\xff\xd8 ... EOI=\xff\xd9)
+
         while True:
-            start = buf.find(b'\xff\xd8')
+            start = buf.find(b"\xff\xd8")
             if start == -1:
-                buf = b''
+                buf = b""
                 break
-            end = buf.find(b'\xff\xd9', start + 2)
+
+            end = buf.find(b"\xff\xd9", start + 2)
             if end == -1:
-                buf = buf[start:]  # keep partial frame, wait for more data
+                buf = buf[start:]
                 break
+
+            frame = buf[start:end + 2]
+
             with _lock:
-                _latest_frame = buf[start:end + 2]
+                _latest_frame = frame
+
             buf = buf[end + 2:]
 
 
 def start_capture():
-    global _ffmpeg_proc, _streaming, _latest_frame
-    if _streaming:
+    global _ffmpeg_proc, _latest_frame
+
+    if _ffmpeg_proc and _ffmpeg_proc.poll() is None:
         return
+
     _latest_frame = None
+
+    cmd = [
+        "libcamera-vid",
+        "-t", "0",
+        "--codec", "mjpeg",
+        "--width", str(WIDTH),
+        "--height", str(HEIGHT),
+        "--framerate", str(FPS),
+        "--inline",
+        "-o", "-"
+    ]
+
+    log("starting camera capture")
+    log("command: " + " ".join(cmd))
+
     _ffmpeg_proc = subprocess.Popen(
-        ['ffmpeg', '-loglevel', 'error',
-         '-f', 'v4l2', '-input_format', 'mjpeg',
-         '-video_size', f'{WIDTH}x{HEIGHT}', '-framerate', str(FPS),
-         '-i', DEVICE,
-         '-f', 'image2pipe', '-vcodec', 'copy', '-'],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
     )
-    _streaming = True
-    threading.Thread(target=_read_frames, args=(_ffmpeg_proc,), daemon=True).start()
-    sys.stderr.write('[camera_server] capture started\n')
-    sys.stderr.flush()
+
+    threading.Thread(target=read_frames, args=(_ffmpeg_proc,), daemon=True).start()
+    threading.Thread(target=read_stderr, args=(_ffmpeg_proc,), daemon=True).start()
+
+
+def read_stderr(proc):
+    while _running:
+        line = proc.stderr.readline()
+        if not line:
+            break
+        try:
+            log("camera: " + line.decode(errors="replace").strip())
+        except Exception:
+            pass
 
 
 def stop_capture():
-    global _ffmpeg_proc, _streaming, _latest_frame
-    _streaming = False
+    global _ffmpeg_proc
+
     if _ffmpeg_proc:
-        _ffmpeg_proc.terminate()
-        _ffmpeg_proc = None
-    _latest_frame = None
-    sys.stderr.write('[camera_server] capture stopped\n')
-    sys.stderr.flush()
+        log("stopping camera capture")
+        try:
+            _ffmpeg_proc.terminate()
+            _ffmpeg_proc.wait(timeout=5)
+        except Exception:
+            try:
+                _ffmpeg_proc.kill()
+            except Exception:
+                pass
+
+    _ffmpeg_proc = None
 
 
 class MJPEGHandler(http.server.BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass  # suppress per-request logs
+    def log_message(self, fmt, *args):
+        return
 
-    def do_GET(self):
-        if self.path.startswith('/stream'):
-            self.send_response(200)
-            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
-            self.send_header('Cache-Control', 'no-cache')
-            self.end_headers()
-            try:
-                while _streaming:
-                    with _lock:
-                        frame = _latest_frame
-                    if frame:
-                        self.wfile.write(
-                            b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-                        )
-                        self.wfile.flush()
-                    time.sleep(1 / FPS)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-        elif self.path.startswith('/snapshot'):
+    def do_HEAD(self):
+        if self.path.startswith("/snapshot"):
             with _lock:
                 frame = _latest_frame
+
             if frame:
                 self.send_response(200)
-                self.send_header('Content-Type', 'image/jpeg')
-                self.send_header('Content-Length', str(len(frame)))
-                self.send_header('Cache-Control', 'no-cache')
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(frame)))
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+            else:
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+
+        elif self.path.startswith("/stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_GET(self):
+        if self.path.startswith("/stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+
+            try:
+                while _running:
+                    with _lock:
+                        frame = _latest_frame
+
+                    if frame:
+                        self.wfile.write(
+                            b"--frame\r\n"
+                            b"Content-Type: image/jpeg\r\n"
+                            b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
+                            b"\r\n" + frame + b"\r\n"
+                        )
+                        self.wfile.flush()
+
+                    time.sleep(1 / FPS)
+
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        elif self.path.startswith("/snapshot"):
+            with _lock:
+                frame = _latest_frame
+
+            if frame:
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(frame)))
+                self.send_header("Cache-Control", "no-cache")
                 self.end_headers()
                 self.wfile.write(frame)
             else:
-                self.send_error(503, 'No frame available')
+                self.send_error(503, "No frame available yet")
+
+        elif self.path.startswith("/health"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok\n")
+
         else:
             self.send_error(404)
 
 
-server = http.server.HTTPServer(('127.0.0.1', PORT), MJPEGHandler)
-threading.Thread(target=server.serve_forever, daemon=True).start()
-print('ready', flush=True)
-sys.stderr.write(f'[camera_server] HTTP server on port {PORT}\n')
-sys.stderr.flush()
+def handle_exit(signum, frame):
+    global _running
+    _running = False
+    stop_capture()
+    sys.exit(0)
 
-for line in sys.stdin:
-    cmd = line.strip()
-    if cmd == 'start':
-        start_capture()
-        print('started', flush=True)
-    elif cmd == 'stop':
-        stop_capture()
-        print('stopped', flush=True)
-    elif cmd == 'snapshot':
-        with _lock:
-            frame = _latest_frame
-        if frame:
-            snap_path = '/tmp/peeqo_snapshot.jpg'
-            with open(snap_path, 'wb') as f:
-                f.write(frame)
-            print(f'snapshot:{snap_path}', flush=True)
-        else:
-            print('snapshot:error', flush=True)
+
+signal.signal(signal.SIGTERM, handle_exit)
+signal.signal(signal.SIGINT, handle_exit)
+
+log(f"HTTP server starting on {HOST}:{PORT}")
+start_capture()
+
+server = http.server.ThreadingHTTPServer((HOST, PORT), MJPEGHandler)
+log("ready")
+
+try:
+    server.serve_forever()
+finally:
+    stop_capture()
