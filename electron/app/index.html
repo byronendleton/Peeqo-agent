@@ -1,11 +1,20 @@
 <!doctype html>
+
+<script>
+  localStorage.removeItem("debug");
+  localStorage.removeItem("DEBUG");
+  localStorage.setItem("debug", "");
+</script>
+
 <html>
     <head>
         <title></title>
         <link rel="stylesheet" type="text/css" href="./css/style.css" />
     </head>
 
-    <body>
+    <div id="screenDimmer"></div>
+
+    <body id="mainBody">
         <div class="debug-panel">
             <a href="#" id="wakeword">Wakeword</a>
         </div>
@@ -46,6 +55,8 @@
         </div>
 
         <audio id="sound" src=""></audio>
+
+        <div id="planeInfoOverlay"></div>
 
         <script src="./js/global.js"></script>
     </body>

@@ -43,42 +43,9 @@ function stopDance() {
 }
 
 document.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
-
     if (e.code === 'Space') {
         console.log("[PTT] space pressed");
         event.emit("wakeword");
-    }
-
-    // TEMP LED TEST KEYS
-    if (e.key === "1") {
-        console.log("[LED TEST] blink red");
-        event.emit("led-on", { anim: "blink", color: "red" });
-    }
-
-    if (e.key === "2") {
-        console.log("[LED TEST] blink aqua");
-        event.emit("led-on", { anim: "blink", color: "aqua" });
-    }
-
-    if (e.key === "3") {
-        console.log("[LED TEST] circle aqua");
-        event.emit("led-on", { anim: "circle", color: "aqua" });
-    }
-
-    if (e.key === "4") {
-        console.log("[LED TEST] circleOut purple");
-        event.emit("led-on", { anim: "circleOut", color: "purple" });
-    }
-
-    if (e.key === "5") {
-        console.log("[LED TEST] fadeOutError orange");
-        event.emit("led-on", { anim: "fadeOutError", color: "orange" });
-    }
-
-    if (e.key === "0") {
-        console.log("[LED TEST] off");
-        event.emit("led-off");
     }
 });
 
@@ -112,7 +79,7 @@ module.exports = () => {
     //if (id === 'videoWrapper') startDance();
     if (id === 'eyeWrapper') stopDance();
     if (id === 'gifWrapper') {
-        event.emit("servo-move", "look-up-slow");
+        event.emit('servo-move', 'look-up');
     }
 });
 	event.on('status-listening', () => { loadEl.className = '' })
@@ -227,21 +194,6 @@ if (
 
 
 // your existing stuff below...
-    const transcript = text.toLowerCase();
-    console.log("[STT transcript]", transcript);
-        if (
-            transcript.includes("take a photo") ||
-            transcript.includes("take photo") ||
-            transcript.includes("take a picture") ||
-            transcript.includes("take picture") ||
-            transcript.includes("take snapshot") ||
-            transcript.includes("camera")
-    ) {
-        console.log("[PTT CAMERA] camera command detected:", transcript);
-        event.emit("camera-photo");
-        return;
-    }
-
 
     if (transcript.includes("light")) {
         debug("[HA] skipping Claude for light command");
@@ -311,81 +263,6 @@ if (
 		currentWebUrl = null
 		webview.loadURL('about:blank')
 	})
-
-
-// Plane overhead
-event.on("plane-overhead", (plane) => {
-    console.log("[plane] reaction:", JSON.stringify(plane));
-
-    const message = plane.airline
-        ? `${plane.airline} ${plane.callsign}`
-        : plane.callsign;
-
-    const overlay = document.getElementById("planeInfoOverlay");
-
-    // Clear overlay at the start
-    if (overlay) {
-        overlay.style.display = "none";
-        overlay.innerHTML = "";
-    }
-
-    // 1. Look up
-    event.emit("servo-move", "look-up-slow");
-
-    // 2. Alert beep + LEDs
-    speak.playSound("camera-toy.wav");
-
-	event.emit("led-on", {
-    anim: "planeScan",
-    color: "blue"
-});
-
-    // 3. Play GIF
-    event.emit("set-answer", {
-        type: "remote",
-        queryTerms: [
-            "airplane flying overhead",
-            "plane flying",
-            "aircraft takeoff",
-            "airplane window view",
-            "cute airplane"
-        ],
-        loop: false,
-        minDuration: 5000
-    });
-
-    // 4. After GIF, return to eyes and show bottom caption
-    setTimeout(() => {
-        console.log("[plane] returning to eyes with caption");
-
-        event.emit("show-div", "eyeWrapper");
-        event.emit("transition-eyes-back");
-
-        if (overlay) {
-            overlay.innerHTML = `
-                ✈ Plane overhead
-                <span class="small">${message}</span>
-                <span class="small">Altitude ${plane.altitudeText}</span>
-            `;
-            overlay.style.display = "block";
-        } else {
-            console.log("[plane] overlay element not found");
-        }
-    }, 6000);
-
-    // 5. Clear caption and reset
-    setTimeout(() => {
-        console.log("[plane] clearing plane overlay");
-
-        if (overlay) {
-            overlay.style.display = "none";
-            overlay.innerHTML = "";
-        }
-
-        event.emit("led-off");
-        event.emit("servo-reset");
-    }, 16000);
-});
 
 
 	// POWER CONTROL

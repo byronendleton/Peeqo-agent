@@ -49,7 +49,7 @@ function setup() {
 
 function playAnimation(anim) {
     debug(`LED anim: ${anim.anim} with color ${anim.color}`);
-    const fn = { blink, circle, circleOut, fadeOutError }[anim.anim];
+    const fn = { blink, circle, circleOut, fadeOutError, planeScan }[anim.anim];
     if (fn) fn(anim.color);
 }
 
@@ -74,6 +74,20 @@ function circle(color = "aqua") {
 function circleOut(color = "green") {
     trail(color, 0,  5);
     trail(color, 11, 6);
+}
+
+function planeScan(color = "blue") {
+    let count = 0;
+
+    const iv = setInterval(() => {
+        circle(color);
+        count++;
+
+        if (count >= 3) {
+            clearInterval(iv);
+            setTimeout(() => off(), 2600);
+        }
+    }, 2200);
 }
 
 function trail(color, start, finish, overshoot = true, brightness = 0.5, time = 100, trLen = TRAIL_LENGTH) {

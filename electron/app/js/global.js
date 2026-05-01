@@ -26,6 +26,28 @@ const listeners = require("js/events/listeners")();
 // keyboard shortcuts
 const { ipcRenderer } = require("electron");
 
+ipcRenderer.on("peeqo-plane-overhead", (_, plane) => {
+    console.log("[plane] overhead event:", plane);
+
+    const event = require("js/events/events");
+
+    const callsign = (plane.callsign || "unknown flight").trim();
+    const airline = (plane.airline || "").trim();
+    const altitude = Number(plane.altitude);
+
+    const altitudeText = Number.isFinite(altitude)
+        ? `${Math.round(altitude)} metres`
+        : "unknown altitude";
+
+    event.emit("servo-move", "look_up");
+    event.emit("plane-overhead", {
+        callsign,
+        airline,
+        altitudeText,
+        raw: plane
+    });
+});
+
 document.addEventListener("keydown", (e) => {
     if (e.which == 123) {
         // F12 - toggle js console (electron.remote was removed in Electron 14)

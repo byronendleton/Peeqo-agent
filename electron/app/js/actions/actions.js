@@ -21,12 +21,17 @@ async function setAnswer(ans=null, overrides={}){
 
 	let q = await common.setQuery(ans)
 	debug(`LOCAL FILE OR SEARCH QUERY > ${q}`)
-
+	console.log("[QUERY]", q);
+	console.log("[ANSWER]", ans);
 	let r = null
 
 	if(ans.type == 'remote'){
 		r = await media.findRemoteGif(q)
+
+		console.log("[MEDIA URL]", r)
+
 		debug(`MEDIA URL > ${r}`)
+	
 	} else if(ans.type == 'url'){
 		r = ans.url
 		debug(`MEDIA URL (direct) > ${r}`)
@@ -36,7 +41,9 @@ async function setAnswer(ans=null, overrides={}){
 	}
 
 	let mediaType = await media.findMediaType(r)
+	console.log("[MEDIA TYPE]", mediaType)
 	let d = await media.findMediaDuration(r)
+	console.log("[MEDIA DURATION]", d)
 
 	// Enforce minimum display duration for looping media
 	if (ans.loop && d) {
@@ -72,7 +79,7 @@ async function setAnswer(ans=null, overrides={}){
 		event.emit('mic-pause')
 	}
 
-	let showMedia = common.transitionToMedia(d, mediaType, ans.loop || false)
+	let showMedia = common.transitionToMedia(d, mediaType, ans.loop || false, r)
 
 	if(ans.hasOwnProperty('text') && ans.text){
 		text.showText(ans.text)

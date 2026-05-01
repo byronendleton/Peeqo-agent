@@ -4,6 +4,8 @@ const { app, BrowserWindow, ipcMain, session } = require("electron");
 const os = require("os");
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require('child_process')
+const http = require("http");
 
 const isARM =
   os.platform() === "linux" && (os.arch() === "arm" || os.arch() === "arm64");
@@ -96,6 +98,8 @@ var createWindow = () => {
     },
   });
 
+  startPlaneWebhookServer(mainWindow);
+
   // display index.html
   mainWindow.loadURL("file://" + __dirname + "/app/index.html");
 
@@ -130,6 +134,49 @@ var createWindow = () => {
     mainWindow.webContents.openDevTools();
   }
 };
+
+//plane watch
+function startPlaneWebhookServer(mainWindow) {
+  const PORT = 8766;
+
+  const server = http.createServer((req, res) => {
+    if (req.method !== "POST" || req.url !== "/plane") {
+      res.writeHead(404);
+      res.end("not found");
+      return;
+    }
+
+    let body = "";
+
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+
+    req.on("end", () => {
+      let data = {};
+
+      try {
+        data = JSON.parse(body || "{}");
+      } catch (err) {
+        console.error("Invalid plane webhook JSON:", err);
+      }
+
+      console.log("Plane overhead:", data);
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("peeqo-plane-overhead", data);
+      }
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+  });
+
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Peeqo plane webhook listening on port ${PORT}`);
+  });
+}
+
 
 // rpi-gpio is NAN-based so it runs here in the main process.
 // GPIO change events are forwarded to the renderer via IPC.

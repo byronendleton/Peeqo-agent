@@ -10,7 +10,7 @@ class Mic {
         this.recorder = os.arch() == "arm" ? "arecord" : "rec";
 
         this.recorderOpts = {
-            verbose: true,
+            verbose: false,
             threshold: 0,
             recorder: this.recorder,
             sampleRate: 16000,
@@ -24,7 +24,9 @@ class Mic {
 
         this.recordingProcess = null;
         this.paused = false;
-
+        this.intentionalStop = false;
+        this.intentionalStop = false;
+    
         // Do NOT start mic immediately. Start it only when needed.
         debug("Microphone initialized");
     }
@@ -43,34 +45,51 @@ class Mic {
     }
 
     stopMic() {
-        if (this.recordingProcess) {
-            try {
-                this.recordingProcess.stop();
-            } catch (e) {
-                console.error("Mic stop error:", e.message);
-            }
-            this.recordingProcess = null;
-            debug("Microphone stopped");
+    if (this.recordingProcess) {
+        try {
+            this.intentionalStop = true;
+            this.recordingProcess.stop();
+        } catch (e) {
+            console.error("Mic stop error:", e.message);
         }
+
+        this.recordingProcess = null;
+        debug("Microphone stopped");
     }
+}
 
     startMic() {
+    this.stopMic();
+
+    this.wakeMic();
+
+    this.recordingProcess = recorder.record(this.recorderOpts);
+    const stream = this.recordingProcess.stream();
+
+    setTimeout(() => {
+        this.intentionalStop = false;
+    }, 300);
+
+    stream.on("error", (err) => {
+        const msg = String(err?.message || err);
+
+        if (
+            this.intentionalStop ||
+            msg.includes("error code null") ||
+            msg.includes("Interrupted system call")
+        ) {
+            debug("Microphone stopped cleanly/expected");
+            return;
+        }
+
+        console.error("Microphone recording error:", err);
         this.stopMic();
+    });
 
-        this.wakeMic();
 
-        this.recordingProcess = recorder.record(this.recorderOpts);
-
-        const stream = this.recordingProcess.stream();
-
-        stream.on("error", (err) => {
-            console.error("Microphone recording error:", err);
-            this.stopMic();
-        });
-
-        debug("Microphone recording started");
-        return stream;
-    }
+    debug("Microphone recording started");
+    return stream;
+}
 
     getMic() {
         if (this.paused) return null;

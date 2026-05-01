@@ -187,26 +187,46 @@ async function transitionFromMedia(ms, interruptible = false){
 	})
 }
 
-function transitionToMedia(duration, type, loop = false){
-	if(!duration){
-		return null
-	}
+function transitionToMedia(duration, type, loop = false, mediaPath = null){
+    if(!duration){
+        return null
+    }
 
-	duration = parseInt(duration)
+    duration = parseInt(duration)
 
-	let afterTransition = () => {
-		if(type == 'video'){
-			let video = document.getElementById("video")
-			video.loop = loop
-			event.emit('show-div','videoWrapper')
-			video.play()
-		} else if(type == 'gif' || type == 'img'){
-			let img = document.getElementById("gif")
-			event.emit('show-div', 'gifWrapper')
-		}
-	}
+    let afterTransition = () => {
+        if(type == 'video'){
+            let video = document.getElementById("video")
+            video.loop = loop
+            event.emit('show-div','videoWrapper')
+            video.play()
+        } else if(type == 'gif' || type == 'img'){
+            let img = document.getElementById("gif")
 
-	event.emit('transition-eyes-away', afterTransition)
+            if (img && mediaPath) {
+                let src = mediaPath
+
+                if (src.includes("/app/media/")) {
+                    src = src.split("/app/")[1]
+                }
+
+                img.src = ""
+                img.style.display = "block"
+                img.style.width = "800px"
+                img.style.height = "480px"
+                img.style.objectFit = "contain"
+
+                setTimeout(() => {
+                    img.src = src + (src.includes("?") ? "&" : "?") + "t=" + Date.now()
+                    console.log("[GIF DISPLAY SRC]", img.src)
+                }, 50)
+            }
+
+            event.emit('show-div','gifWrapper')
+        }
+    }
+
+    event.emit('transition-eyes-away', afterTransition)
 }
 
 

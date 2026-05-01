@@ -3,6 +3,8 @@ const giphy = require('giphy-api')(config.giphy.key);
 const { ipcRenderer } = require('electron');
 const { GoogleAuth } = require('google-auth-library');
 const path = require('path')
+const fs = require('fs')
+const https = require('https')
 
 const youtubeAuth = new GoogleAuth({
 	keyFilename: path.join(process.cwd(), 'app', 'config', config.speech.dialogflowKey),
@@ -17,26 +19,89 @@ async function youtubeGet(url) {
 	return res.json()
 }
 
+function downloadFile(url, filepath) {
+    return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(filepath)
 
-function findRemoteGif(query){
-	if(!query){
-		return null
-	}
+        https.get(url, response => {
+            response.pipe(file)
 
-	// search() returns up to 10 results; pick randomly from the top 5 so the same
-	// query doesn't always show the same GIF. translate() is deterministic and repetitive.
-	return new Promise((resolve, reject)=>{
-		giphy.search({ q: query, limit: 10, rating: 'pg-13', lang: 'en', weirdness: 0 }, (err, res)=>{
-			if(err || !res?.data?.length){
-				reject(`Got error or no results for "${query}" from Giphy`)
-				return
-			}
-			const top = res.data.slice(0, 3)
-			const chosen = top[Math.floor(Math.random() * top.length)]
-			resolve(chosen.images.original_mp4.mp4)
-		})
-	})
+            file.on('finish', () => {
+                file.close(() => resolve(filepath))
+            })
+        }).on('error', err => {
+            fs.unlink(filepath, () => {})
+            reject(err)
+        })
+    })
 }
+
+function downloadFile(url, filepath) {
+    return new Promise((resolve, reject) => {
+        const file = fs.createWriteStream(filepath);
+
+        https.get(url, response => {
+            response.pipe(file);
+
+            file.on('finish', () => {
+                file.close(() => resolve(filepath));
+            });
+        }).on('error', err => {
+            fs.unlink(filepath, () => {});
+            reject(err);
+        });
+    });
+}
+
+async function findRemoteGif(query) {
+    if (!query) return null;
+
+    console.log("[GIPHY] function entered:", query);
+
+    try {
+        const url =
+            `https://api.giphy.com/v1/gifs/search` +
+            `?api_key=${config.giphy.key}` +
+            `&q=${encodeURIComponent(query)}` +
+            `&limit=10&rating=pg-13&lang=en`;
+
+        console.log("[GIPHY] search:", query);
+
+        const res = await fetch(url);
+        const json = await res.json();
+
+        if (!json.data || !json.data.length) {
+            console.error("[GIPHY] no results:", json);
+            return null;
+        }
+
+        const top = json.data.slice(0, 3);
+        const chosen = top[Math.floor(Math.random() * top.length)];
+
+        const gifUrl =
+            chosen.images?.fixed_height?.url ||
+            chosen.images?.downsized?.url ||
+            chosen.images?.original?.url ||
+            null;
+
+        console.log("[GIPHY] chosen:", chosen.title);
+        console.log("[GIPHY] gifUrl:", gifUrl);
+
+        // 🔥 DOWNLOAD TO LOCAL FILE (this fixes black screen)
+        const localPath = path.join(process.cwd(), 'app', 'media', 'giphy-cache.gif');
+
+        await downloadFile(gifUrl, localPath);
+
+        console.log("[GIPHY] saved locally:", localPath);
+
+        return localPath;
+
+    } catch (err) {
+        console.error("[GIPHY] fetch failed:", err);
+        return null;
+    }
+}
+
 
 function parseISO8601Duration(iso) {
 	const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
@@ -108,37 +173,46 @@ async function findMediaType(filepath){
 }
 
 async function findMediaDuration(path){
-	if(!path){
-		return null
-	}
+    if(!path){
+        return null
+    }
 
-	let type = await findMediaType(path)
+    let type = await findMediaType(path)
 
-	let duration = 0
+    let duration = 0
 
-	if(type == 'video'){
+    if(type == 'video'){
 
-		duration = await findVideoDuration(path)
-		
+        duration = await findVideoDuration(path)
 
-	} else if(type == 'img'){
+    } else if (type == 'img' || type == 'gif') {
 
-		duration = await findGifDuration(path)
+        return 6000;
 
-	} else if(type == 'gif'){
-		
-		duration = await findGifDuration(path)
-		
-	}
+    }
 
-	return duration
+    return duration
 }
 
 async function findGifDuration(path){
+    let gif = document.getElementById("gif")
 
-	let gif = document.getElementById("gif")
-	gif.src = path
-	return 6000
+    if (!gif) return 0
+
+    gif.onload = () => console.log("[GIF] loaded:", gif.src)
+    gif.onerror = (e) => console.error("[GIF] failed:", gif.src, e)
+
+    gif.src = ""
+
+    const src = path.includes("/app/media/")
+        ? path.split("/app/")[1]
+        : path
+
+    setTimeout(() => {
+        gif.src = src + (src.includes("?") ? "&" : "?") + "t=" + Date.now()
+    }, 50)
+
+    return 6000
 }
 
 
