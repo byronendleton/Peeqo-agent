@@ -149,11 +149,11 @@ Set **one** of `anthropic.apiKey` or `openrouter.apiKey` in `config.js`. If both
 
 ```js
 anthropic: {
-  apiKey: "sk-ant-...",          // preferred: faster, supports caching + streaming
+  apiKey: "your_api_key",          // preferred: faster, supports caching + streaming
   model: "claude-haiku-4-5-20251001",
 },
 openrouter: {
-  apiKey: "sk-or-v1-...",        // fallback; set apiKey to "" to use Anthropic
+  apiKey: process.env.OPENROUTER_API_KEY || "",,        // fallback; set apiKey to "" to use Anthropic
   model: "anthropic/claude-sonnet-4-5",
 },
 ```
