@@ -14,7 +14,8 @@ CHECK_INTERVAL = 1.0
 MOTION_THRESHOLD = 8.0
 
 # Screen timing
-DIM_AFTER = 300
+SNOOZE_AFTER = 20
+DIM_AFTER = 30
 #OFF_AFTER = 0
 
 # Screen brightness
@@ -201,7 +202,12 @@ while True:
 
         previous_frame = frame
 
-    idle_time = now - last_motion
+        idle_time = now - last_motion
+
+    if idle_time >= SNOOZE_AFTER and not snoozing:
+        snoozing = True
+        print("screen: snooze", flush=True)
+        call_peeqo("/snooze")
 
     if idle_time >= DIM_AFTER:
         if screen_state == "awake":

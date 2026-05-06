@@ -109,11 +109,11 @@ module.exports = () => {
 	event.on('show-div', (id) => {
     if (id === 'videoWrapper' || id === 'gifWrapper') loadEl.className = '';
 
-    // Do not auto-move on GIF display.
-    // Sleep/wake/camera actions trigger their own servo motions.
+    //if (id === 'videoWrapper') startDance();
+    if (id === 'eyeWrapper') stopDance();
     if (id === 'gifWrapper') {
-    // event.emit("servo-move", "look-up-slow");
-}
+        event.emit("servo-move", "look-up-slow");
+    }
 });
 	event.on('status-listening', () => { loadEl.className = '' })
 	event.on('set-answer', actions.setAnswer)
@@ -274,28 +274,6 @@ if (text.includes("light") || text.includes("lights") || text.includes("switch")
             console.log("[HA] webhook error:", err);
         });
 
-        const gifCategory = action === "on"
-    ? "lights_on"
-    : action === "off"
-        ? "lights_off"
-        : "toggle";
-
-fetch(`http://192.168.1.182:5055/random/${gifCategory}`)
-    .then(res => res.json())
-    .then(gif => {
-        console.log(`[MAC GIF] ${gifCategory}: ${gif.url}`);
-
-        event.emit("set-answer", {
-            type: "url",
-            url: gif.url,
-            ans: "",
-            loop: true,
-            minDuration: 3000
-        });
-    })
-    .catch(err => {
-        console.log("[MAC GIF] error:", err);
-
         const pickedGifQuery = pickGifQuery(action, gifQueries[action]);
 
         event.emit("set-answer", {
@@ -304,7 +282,6 @@ fetch(`http://192.168.1.182:5055/random/${gifCategory}`)
             loop: true,
             minDuration: 3000
         });
-    });
 
         return;
     }
@@ -425,30 +402,18 @@ event.on("plane-overhead", (plane) => {
     color: "blue"
 });
 
-    // 3. Play GIF from Mac mini local GIF server
-fetch("http://192.168.1.182:5055/random/planes")
-    .then(res => res.json())
-    .then(gif => {
-        console.log(`[MAC GIF] planes: ${gif.url}`);
-
-        event.emit("set-answer", {
-            type: "url",
-            url: gif.url,
-            ans: "",
-            loop: true,
-            minDuration: 4000
-        });
-    })
-    .catch(err => {
-        console.log("[MAC GIF] planes error:", err);
-
-        // Fallback to old remote GIF search if Mac server is unavailable
-        event.emit("set-answer", {
-            type: "remote",
-            queryTerms: "airplane flying overhead",
-            loop: true,
-            minDuration: 4000
-        });
+    // 3. Play GIF
+    event.emit("set-answer", {
+        type: "remote",
+        queryTerms: [
+            "airplane flying overhead",
+            "plane flying",
+            "aircraft takeoff",
+            "airplane window view",
+            "cute airplane"
+        ],
+        loop: false,
+        minDuration: 5000
     });
 
     // 4. After GIF, return to eyes and show bottom caption
@@ -484,15 +449,6 @@ fetch("http://192.168.1.182:5055/random/planes")
     }, 16000);
 });
 
-//    event.on("peeqo-sleep-eyes", () => {
-//    console.log("[sleep] asleep eyes");
-//    document.body.classList.add("peeqo-sleeping");
-//});
-//
-//event.on("peeqo-awake-eyes", () => {
-//    console.log("[sleep] awake eyes");
-//    document.body.classList.remove("peeqo-sleeping");
-//});
 
 	// POWER CONTROL
 	event.on('shutdown', power.shutdown)

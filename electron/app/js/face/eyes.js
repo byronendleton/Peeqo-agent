@@ -30,11 +30,15 @@ class Eyes {
 		this.transitionToMedia = this.transitionToMedia.bind(this)
 		this.transitionFromMedia = this.transitionFromMedia.bind(this)
 		this.blink = this.blink.bind(this)
+		this.sleepEyes = this.sleepEyes.bind(this)
+		this.wakeEyes = this.wakeEyes.bind(this)
 
 		event.on('start-blinking', this.startBlinking)
 		event.on('stop-blinking', this.stopBlinking)
 		event.on('transition-eyes-away', this.transitionToMedia)
 		event.on('transition-eyes-back', this.transitionFromMedia)
+		event.on('peeqo-sleep-eyes', this.sleepEyes)
+		event.on('peeqo-awake-eyes', this.wakeEyes)
 	}
 
 	getRandomBlinkInterval(){
@@ -73,6 +77,62 @@ class Eyes {
 		})
 	}
 
+	    sleepEyes() {
+                debug("sleep eyes")
+
+                this.stopBlinking()
+
+                this.leftEye.stop()
+                this.rightEye.stop()
+
+                this.leftEye.attr({
+                        fill: "#000000",
+                        opacity: 1
+                })
+
+                this.rightEye.attr({
+                        fill: "#000000",
+                        opacity: 1
+                })
+
+                this.leftEye.animate({
+                        ry: 14,
+                        rx: 82
+                }, 500, mina.easein())
+
+                this.rightEye.animate({
+                        ry: 14,
+                        rx: 82
+                }, 500, mina.easein())
+        }
+        wakeEyes() {
+                debug("wake eyes")
+
+                this.leftEye.stop()
+                this.rightEye.stop()
+
+                this.leftEye.attr({
+                        fill: "#000000",
+                        opacity: 1
+                })
+
+                this.rightEye.attr({
+                        fill: "#000000",
+                        opacity: 1
+                })
+
+                this.leftEye.animate({
+                        ry: this.eyeSize,
+                        rx: this.eyeSize
+                }, 300, mina.easein())
+
+                this.rightEye.animate({
+                        ry: this.eyeSize,
+                        rx: this.eyeSize
+                }, 300, mina.easein(), () => {
+                        this.startBlinking()
+                })
+        }
 	blink() {
 
 		let eyes = ['leftEye','rightEye']

@@ -20,10 +20,6 @@ const MODEL_PATH = config.speech.wakewordModel
 const REWAKE_DELAY_MS = 1000;
 
 function startListening() {
-    if (config.speech.wakewordEnabled === false) {
-        debug("[listen] wakeword disabled; not starting detector");
-        return;
-    }
     const args = ["--threshold", String(config.speech.wakewordThreshold || 0.5)];
     if (MODEL_PATH) args.push("--model", MODEL_PATH);
 

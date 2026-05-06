@@ -39,7 +39,7 @@ ipcRenderer.on("peeqo-plane-overhead", (_, plane) => {
         ? `${Math.round(altitude)} metres`
         : "unknown altitude";
 
-    event.emit("servo-move", "look_up");
+    event.emit("servo-move", "look-up");
     event.emit("plane-overhead", {
         callsign,
         airline,
@@ -81,6 +81,9 @@ const camera = new Camera();
 // initiate servos (IPC relay — actual driver is in servo-main.js in main process)
 const Servo = require("js/senses/servo");
 const servo = new Servo();
+
+const MotionBridge = require("js/helpers/motion-bridge");
+const motionBridge = new MotionBridge();
 
 // initiate text
 const text = require("js/senses/text");
