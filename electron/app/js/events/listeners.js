@@ -6,560 +6,537 @@ const power = require('js/power/power')
 const speak = require('js/senses/speak')
 const stt = require('js/intent-engines/stt')
 const claude = require('js/intent-engines/claude')
-const text = require('js/senses/text')
+const textBubble = require('js/senses/text')
 const mic = require('js/senses/mic')
-const process = require('process');
 const actions = require('js/actions/actions')
+const process = require('process')
 
-let danceTimer = null;
+let danceTimer = null
 
 function startDance() {
-    if (danceTimer) return;
+    if (danceTimer) return
 
-    console.log("[SERVO] dance started");
+    console.log('[SERVO] dance started')
 
-    const moves = ['jiggle', 'look-up', 'alert', 'look-up-slow'];
+    const moves = ['jiggle', 'look-up', 'alert', 'look-up-slow']
 
     function loop() {
-        const move = moves[Math.floor(Math.random() * moves.length)];
-        event.emit('servo-move', move);
+        const move = moves[Math.floor(Math.random() * moves.length)]
+        event.emit('servo-move', move)
 
-        const next = 1200 + Math.random() * 1200;
-        danceTimer = setTimeout(loop, next);
+        const next = 1200 + Math.random() * 1200
+        danceTimer = setTimeout(loop, next)
     }
 
-    loop();
+    loop()
 }
 
-function stopDance() {
-    if (!danceTimer) return;
+function stopDance(resetServo = true) {
+    if (!danceTimer) return
 
-    clearTimeout(danceTimer);
-    danceTimer = null;
+    clearTimeout(danceTimer)
+    danceTimer = null
 
-    event.emit('servo-move', 'reset');
+    if (resetServo) {
+        event.emit('servo-reset')
+    }
 
-    console.log("[SERVO] dance stopped");
+    console.log('[SERVO] dance stopped')
 }
 
-document.addEventListener('keydown', (e) => {
-    if (e.repeat) return;
+function pickGifQuery(actionName, queries) {
+    if (!Array.isArray(queries) || queries.length === 0) return 'light switch funny'
 
-    if (e.code === 'Space') {
-        console.log("[PTT] space pressed");
-        event.emit("wakeword");
+    if (!global.recentGifQueries) global.recentGifQueries = {}
+    if (!global.recentGifQueries[actionName]) global.recentGifQueries[actionName] = []
+
+    const recent = global.recentGifQueries[actionName]
+    const freshChoices = queries.filter(q => !recent.includes(q))
+    const pool = freshChoices.length ? freshChoices : queries
+    const picked = pool[Math.floor(Math.random() * pool.length)]
+
+    recent.push(picked)
+
+    while (recent.length > Math.min(6, queries.length - 1)) {
+        recent.shift()
     }
 
-    // TEMP LED TEST KEYS
-    if (e.key === "1") {
-        console.log("[LED TEST] blink red");
-        event.emit("led-on", { anim: "blink", color: "red" });
-    }
+    console.log(`[HA GIF] picked query for ${actionName}: ${picked}`)
 
-    if (e.key === "2") {
-        console.log("[LED TEST] blink aqua");
-        event.emit("led-on", { anim: "blink", color: "aqua" });
-    }
-
-    if (e.key === "3") {
-        console.log("[LED TEST] circle aqua");
-        event.emit("led-on", { anim: "circle", color: "aqua" });
-    }
-
-    if (e.key === "4") {
-        console.log("[LED TEST] circleOut purple");
-        event.emit("led-on", { anim: "circleOut", color: "purple" });
-    }
-
-    if (e.key === "5") {
-        console.log("[LED TEST] fadeOutError orange");
-        event.emit("led-on", { anim: "fadeOutError", color: "orange" });
-    }
-
-    if (e.key === "0") {
-        console.log("[LED TEST] off");
-        event.emit("led-off");
-    }
-});
-
-
-module.exports = () => {
-
-	// Tracks whether a long-form video was paused by the wakeword.
-	// Cleared by final-transcript (command heard) or end-speech-to-text (nothing heard).
-	let mediaWasPaused = false
-
-	
-	// STATUS INDICATORS (upper-right corner)
-	const recEl = document.getElementById('status-recording')
-	const loadEl = document.getElementById('status-loading')
-
-	event.on('status-listening', () => { recEl.className = 'active' })
-	event.on('wakeword',         () => { recEl.className = '' })
-    event.on('start-dance', startDance);
-    event.on('stop-dance', stopDance);
-	event.on('final-transcript', (data) => {
-    const text = data.text.toLowerCase();
-
-    debug('[indicator] final-transcript:', text)
-    loadEl.className = 'active'
-
-});
-
-	event.on('show-div', (id) => {
-    if (id === 'videoWrapper' || id === 'gifWrapper') loadEl.className = '';
-
-    // Do not auto-move on GIF display.
-    // Sleep/wake/camera actions trigger their own servo motions.
-    if (id === 'gifWrapper') {
-    // event.emit("servo-move", "look-up-slow");
-}
-});
-	event.on('status-listening', () => { loadEl.className = '' })
-	event.on('set-answer', actions.setAnswer)
-	event.on('wakeword', () => debug("[listeners] wakeword event received"))
-	// Pause any interruptible long-form media — will resume if no command is spoken
-	event.on('wakeword', () => { mediaWasPaused = true; event.emit('pause-media') })
-	event.on('wakeword', () => text.hideBubble())
-	event.on('wakeword', action.wakeword)
-	event.on('wakeword', () => {
-    event.emit('servo-move', 'alert');
-    event.emit('play-sound', 'alert.wav');
-})
-
-	// Open gRPC connection immediately so it's warm when audio starts
-	event.on('wakeword', stt.prepare)
-	// Emit speech-to-text at wakeword time (parallel to alert playback).
-	// AUDIO_START_DELAY_MS in dialogflow.js is the single knob for the full
-	// wakeword-to-Dialogflow gap. It must cover alert.wav duration + room echo.
-	// Previously speech-to-text fired from cbAfter (after alert ended), making
-	// the total delay = alert_duration + AUDIO_START_DELAY_MS. Now it's just
-	// AUDIO_START_DELAY_MS, and the alert plays concurrently.
-	event.on('wakeword', () => event.emit('speech-to-text'))
-
-	// A command was spoken — stop the paused media so the new response can take over
-	event.on('final-transcript', () => {
-		if (mediaWasPaused) { mediaWasPaused = false; event.emit('stop-media') }
-	})
-	
-	event.on('final-transcript', (data) => {
-    const text = data.text.toLowerCase();
-
-    debug('[indicator] final-transcript:', text)
-    loadEl.className = 'active'
-
-// 🕺 Explicit dance command only
-if (
-    text.includes("do a dance") ||
-    text.includes("dance for me") ||
-    text.includes("start dancing")
-) {
-    debug("[dance] explicit dance command received");
-
-    event.emit('stop-media');
-    event.emit('play-sound', 'alert.wav');
-    event.emit('start-dance');
-
-    setTimeout(() => {
-        event.emit('stop-dance');
-        event.emit('servo-move', 'reset');
-    }, 8000);
-
-    return;
+    return picked
 }
 
+function handleLightsCommand(transcript) {
+    if (
+        !transcript.includes('light') &&
+        !transcript.includes('lights') &&
+        !transcript.includes('switch')
+    ) {
+        return false
+    }
 
-// 🔥 Dynamic Home Assistant control
-if (text.includes("light") || text.includes("lights") || text.includes("switch")) {
+    const rooms = ['lounge', 'kitchen', 'bedroom', 'study']
+    const room = rooms.find(r => transcript.includes(r))
 
-    const rooms = ["lounge", "kitchen", "bedroom", "study"];
-    let room = rooms.find(r => text.includes(r));
+    if (!room) return false
 
-    let action = "toggle";
+    let lightAction = 'toggle'
 
-    if (text.includes("off") || text.includes("turn off")) action = "off";
-    if (text.includes("on") || text.includes("turn on")) action = "on";
+    if (transcript.includes('off') || transcript.includes('turn off')) lightAction = 'off'
+    if (transcript.includes('on') || transcript.includes('turn on')) lightAction = 'on'
 
     const gifQueries = {
         on: [
             `${room} lights turning on`,
             `${room} lights on`,
-            "let there be light",
-            "lights turning on dramatic",
-            "light bulb glowing",
-            "bright room lights on",
-            "stage lights turning on",
-            "neon lights turning on",
-            "room lights on",
-            "electricity funny",
-            "glowing light bulb",
-            "sunrise dramatic",
-            "brightness intensifies",
-            "disco lights",
-            "robot turns on lights",
-            "lightsaber ignite"
+            'let there be light',
+            'lights turning on dramatic',
+            'light bulb glowing',
+            'bright room lights on',
+            'stage lights turning on',
+            'neon lights turning on',
+            'room lights on',
+            'electricity funny',
+            'glowing light bulb',
+            'sunrise dramatic',
+            'brightness intensifies',
+            'disco lights',
+            'robot turns on lights',
+            'lightsaber ignite'
         ],
         off: [
             `${room} lights turning off`,
             `${room} lights off`,
-            "lights going out",
-            "dark room lights off",
-            "lights out funny",
-            "turn off the lights",
-            "power outage funny",
-            "dramatic darkness",
-            "fade to black",
-            "goodnight lights off",
-            "blackout funny",
-            "night mode",
-            "sleepy lights off",
-            "the darkness",
-            "movie theater lights off"
+            'lights going out',
+            'dark room lights off',
+            'lights out funny',
+            'turn off the lights',
+            'power outage funny',
+            'dramatic darkness',
+            'fade to black',
+            'goodnight lights off',
+            'blackout funny',
+            'night mode',
+            'sleepy lights off',
+            'the darkness',
+            'movie theater lights off'
         ],
         toggle: [
             `${room} light switch`,
             `${room} lights toggle`,
-            "light switch flip",
-            "light switch funny",
-            "robot button press",
-            "dramatic light switch",
-            "smart home lights",
-            "electricity funny",
-            "mood lighting",
-            "disco lights",
-            "lights on lights off",
-            "button press funny",
-            "switch flick",
-            "toggle switch",
-            "home automation lights"
+            'light switch flip',
+            'light switch funny',
+            'robot button press',
+            'dramatic light switch',
+            'smart home lights',
+            'electricity funny',
+            'mood lighting',
+            'disco lights',
+            'lights on lights off',
+            'button press funny',
+            'switch flick',
+            'toggle switch',
+            'home automation lights'
         ]
-    };
-
-    function pickGifQuery(action, queries) {
-        if (!Array.isArray(queries) || queries.length === 0) return "light switch funny";
-
-        if (!global.recentGifQueries) global.recentGifQueries = {};
-        if (!global.recentGifQueries[action]) global.recentGifQueries[action] = [];
-
-        const recent = global.recentGifQueries[action];
-        const freshChoices = queries.filter(q => !recent.includes(q));
-        const pool = freshChoices.length ? freshChoices : queries;
-
-        const picked = pool[Math.floor(Math.random() * pool.length)];
-
-        recent.push(picked);
-
-        while (recent.length > Math.min(6, queries.length - 1)) {
-            recent.shift();
-        }
-
-        console.log(`[HA GIF] picked query for ${action}: ${picked}`);
-
-        return picked;
     }
 
-    if (room) {
-        global.commandHandled = true;
+    global.commandHandled = true
 
-        console.log(`[HA] ${action} ${room} lights`);
+    console.log(`[HA] ${lightAction} ${room} lights`)
 
-        fetch("http://homeassistant.local:8123/api/webhook/peeqo_lights", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                room,
-                action
-            })
-        }).catch(err => {
-            console.log("[HA] webhook error:", err);
-        });
-
-        const gifCategory = action === "on"
-    ? "lights_on"
-    : action === "off"
-        ? "lights_off"
-        : "toggle";
-
-fetch(`http://192.168.1.182:5055/random/${gifCategory}`)
-    .then(res => res.json())
-    .then(gif => {
-        console.log(`[MAC GIF] ${gifCategory}: ${gif.url}`);
-
-        event.emit("set-answer", {
-            type: "url",
-            url: gif.url,
-            ans: "",
-            loop: true,
-            minDuration: 3000
-        });
+    fetch('http://homeassistant.local:8123/api/webhook/peeqo_lights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            room,
+            action: lightAction
+        })
+    }).catch(err => {
+        console.log('[HA] webhook error:', err)
     })
-    .catch(err => {
-        console.log("[MAC GIF] error:", err);
 
-        const pickedGifQuery = pickGifQuery(action, gifQueries[action]);
+    const gifCategory = lightAction === 'on'
+        ? 'lights_on'
+        : lightAction === 'off'
+            ? 'lights_off'
+            : 'toggle'
 
-        event.emit("set-answer", {
-            type: "remote",
-            queryTerms: pickedGifQuery,
-            loop: true,
-            minDuration: 3000
-        });
-    });
+    fetch(`http://192.168.1.182:5055/random/${gifCategory}`)
+        .then(res => res.json())
+        .then(gif => {
+            console.log(`[MAC GIF] ${gifCategory}: ${gif.url}`)
 
-        return;
-    }
+            event.emit('set-answer', {
+                type: 'url',
+                url: gif.url,
+                ans: '',
+                loop: true,
+                minDuration: 3000
+            })
+        })
+        .catch(err => {
+            console.log('[MAC GIF] error:', err)
+
+            const pickedGifQuery = pickGifQuery(lightAction, gifQueries[lightAction])
+
+            event.emit('set-answer', {
+                type: 'remote',
+                queryTerms: pickedGifQuery,
+                loop: true,
+                minDuration: 3000
+            })
+        })
+
+    return true
 }
 
-
-// your existing stuff below...
-    const transcript = text.toLowerCase();
-    console.log("[STT transcript]", transcript);
-        if (
-            transcript.includes("take a photo") ||
-            transcript.includes("take photo") ||
-            transcript.includes("take a picture") ||
-            transcript.includes("take picture") ||
-            transcript.includes("take snapshot") ||
-            transcript.includes("camera")
+function handleCameraCommand(transcript) {
+    if (
+        transcript.includes('take a photo') ||
+        transcript.includes('take photo') ||
+        transcript.includes('take a picture') ||
+        transcript.includes('take picture') ||
+        transcript.includes('take snapshot') ||
+        transcript.includes('camera')
     ) {
-        console.log("[PTT CAMERA] camera command detected:", transcript);
-        event.emit("camera-photo");
-        return;
+        console.log('[PTT CAMERA] camera command detected:', transcript)
+        event.emit('camera-photo')
+        return true
     }
 
+    return false
+}
 
-    if (transcript.includes("light")) {
-        debug("[HA] skipping Claude for light command");
-        return;
+function handleDanceCommand(transcript) {
+    if (
+        transcript.includes('do a dance') ||
+        transcript.includes('dance for me') ||
+        transcript.includes('start dancing')
+    ) {
+        debug('[dance] explicit dance command received')
+
+        event.emit('stop-media')
+        event.emit('play-sound', 'alert.wav')
+        event.emit('start-dance')
+
+        setTimeout(() => {
+            event.emit('stop-dance')
+            event.emit('servo-reset')
+        }, 8000)
+
+        return true
     }
 
-    claude.handleTranscript(data);
-});
+    return false
+}
 
-	event.on('show-speech-bubble', (msg) => text.showBubble(msg))
+document.addEventListener('keydown', (e) => {
+    if (e.repeat) return
 
-	event.on('no-command', () => {
-    if (global.commandHandled) {
-        global.commandHandled = false;
-        return;
+    if (e.code === 'Space') {
+        console.log('[PTT] space pressed')
+        event.emit('wakeword')
     }
 
-    event.emit("led-on", {anim:'fadeOutError',color:'red'})
+    // Temporary LED test keys
+    if (e.key === '1') {
+        console.log('[LED TEST] blink red')
+        event.emit('led-on', { anim: 'blink', color: 'red' })
+    }
+
+    if (e.key === '2') {
+        console.log('[LED TEST] blink aqua')
+        event.emit('led-on', { anim: 'blink', color: 'aqua' })
+    }
+
+    if (e.key === '3') {
+        console.log('[LED TEST] circle aqua')
+        event.emit('led-on', { anim: 'circle', color: 'aqua' })
+    }
+
+    if (e.key === '4') {
+        console.log('[LED TEST] circleOut purple')
+        event.emit('led-on', { anim: 'circleOut', color: 'purple' })
+    }
+
+    if (e.key === '5') {
+        console.log('[LED TEST] fadeOutError orange')
+        event.emit('led-on', { anim: 'fadeOutError', color: 'orange' })
+    }
+
+    if (e.key === '0') {
+        console.log('[LED TEST] off')
+        event.emit('led-off')
+    }
 })
-	
-	event.on('speech-to-text', () => debug("[listeners] speech-to-text event received"))
-	event.on('speech-to-text', stt.startAudio)
 
-	event.on('end-speech-to-text', () =>{
+module.exports = () => {
+    let mediaWasPaused = false
 
-		if(process.env.OS == "unsupported"){
-			document.getElementById("wakeword").style.backgroundColor = ""
-		}
+    const recEl = document.getElementById('status-recording')
+    const loadEl = document.getElementById('status-loading')
 
-		if (mediaWasPaused) {
-			// Nothing was heard — resume the video that was paused on wakeword
-			mediaWasPaused = false
-			event.emit('resume-media')
-		}
-
-		// Restart arecord to get a clean stream before re-attaching the wakeword
-		// detector. Without this, audio buffered during the Dialogflow session
-		// (including any alert echo) flushes into the detector immediately on
-		// re-pipe and can cause a spurious re-trigger.
-		event.emit('mic-pause')
-		event.emit('mic-resume')  // mic-resume internally emits pipe-to-wakeword
-
-	})
-
-	// passes id of div to show
-	event.on('show-div', common.showDiv)
-
-	const webview = document.getElementById('webView')
-	let currentWebUrl = null
-
-	webview.addEventListener('did-fail-load', (e) => {
-		if (e.errorCode === -3) return // ERR_ABORTED — previous page cancelled by new navigation, ignore
-		if (e.validatedURL !== currentWebUrl) return // stale failure from a superseded request, ignore
-		console.error(`[webview] failed to load (${e.errorCode}): ${e.errorDescription}`)
-		currentWebUrl = null
-		common.showDiv('eyeWrapper')
-		webview.loadURL('about:blank')
-	})
-
-	event.on('show-web-page', (url) => {
-		currentWebUrl = url
-		webview.src = url
-		common.showDiv('webWrapper')
-	})
-
-	event.on('clear-web-page', () => {
-		currentWebUrl = null
-		webview.loadURL('about:blank')
-	})
-
-
-// Plane overhead
-event.on("plane-overhead", (plane) => {
-    console.log("[plane] reaction:", JSON.stringify(plane));
-
-    const message = plane.airline
-        ? `${plane.airline} ${plane.callsign}`
-        : plane.callsign;
-
-    const overlay = document.getElementById("planeInfoOverlay");
-
-    // Clear overlay at the start
-    if (overlay) {
-        overlay.style.display = "none";
-        overlay.innerHTML = "";
-    }
-
-    // 1. Look up
-    event.emit("servo-move", "look-up-slow");
-
-    // 2. Alert beep + LEDs
-    speak.playSound("camera-toy.wav");
-
-	event.emit("led-on", {
-    anim: "planeScan",
-    color: "blue"
-});
-
-    // 3. Play GIF from Mac mini local GIF server
-fetch("http://192.168.1.182:5055/random/planes")
-    .then(res => res.json())
-    .then(gif => {
-        console.log(`[MAC GIF] planes: ${gif.url}`);
-
-        event.emit("set-answer", {
-            type: "url",
-            url: gif.url,
-            ans: "",
-            loop: true,
-            minDuration: 4000
-        });
+    event.on('status-listening', () => {
+        recEl.className = 'active'
+        loadEl.className = ''
     })
-    .catch(err => {
-        console.log("[MAC GIF] planes error:", err);
 
-        // Fallback to old remote GIF search if Mac server is unavailable
-        event.emit("set-answer", {
-            type: "remote",
-            queryTerms: "airplane flying overhead",
-            loop: true,
-            minDuration: 4000
-        });
-    });
+    event.on('wakeword', () => {
+        recEl.className = ''
+    })
 
-    // 4. After GIF, return to eyes and show bottom caption
-    setTimeout(() => {
-        console.log("[plane] returning to eyes with caption");
+    event.on('start-dance', startDance)
+    event.on('stop-dance', () => stopDance(true))
 
-        event.emit("show-div", "eyeWrapper");
-        event.emit("transition-eyes-back");
-
-        if (overlay) {
-            overlay.innerHTML = `
-                ✈ Plane overhead
-                <span class="small">${message}</span>
-                <span class="small">Altitude ${plane.altitudeText}</span>
-            `;
-            overlay.style.display = "block";
-        } else {
-            console.log("[plane] overlay element not found");
-        }
-    }, 6000);
-
-    // 5. Clear caption and reset
-    setTimeout(() => {
-        console.log("[plane] clearing plane overlay");
-
-        if (overlay) {
-            overlay.style.display = "none";
-            overlay.innerHTML = "";
+    event.on('show-div', (id) => {
+        if (id === 'videoWrapper' || id === 'gifWrapper') {
+            loadEl.className = ''
         }
 
-        event.emit("led-off");
-        event.emit("servo-reset");
-    }, 16000);
-});
+        // Important:
+        // Returning to eyeWrapper should not force a servo reset.
+        // Sleep/wake/camera actions own their own servo motions.
+        if (id === 'eyeWrapper') {
+            stopDance(false)
+        }
 
-//    event.on("peeqo-sleep-eyes", () => {
-//    console.log("[sleep] asleep eyes");
-//    document.body.classList.add("peeqo-sleeping");
-//});
-//
-//event.on("peeqo-awake-eyes", () => {
-//    console.log("[sleep] awake eyes");
-//    document.body.classList.remove("peeqo-sleeping");
-//});
+        // No automatic GIF servo move here.
+        // This avoids fighting sleep/wake/camera servo actions.
+    })
 
-	// POWER CONTROL
-	event.on('shutdown', power.shutdown)
+    event.on('set-answer', actions.setAnswer)
 
-	event.on('reboot', power.reboot)
+    event.on('wakeword', () => debug('[listeners] wakeword event received'))
 
-	event.on('refresh', power.refresh)
+    event.on('wakeword', () => {
+        mediaWasPaused = true
+        event.emit('pause-media')
+    })
 
+    event.on('wakeword', () => textBubble.hideBubble())
+    event.on('wakeword', action.wakeword)
 
-	// MIC MUTE DURING MEDIA PLAYBACK
-	event.on('mic-pause', () => mic.pause())
-	event.on('mic-resume', () => {
-		mic.resume()
-		// Re-pipe the resumed mic to the wakeword detector.
-		// mic-resume starts a new arecord process; without this the detector
-		// would have no audio after the response media finishes.
-		event.emit('pipe-to-wakeword')
-	})
+    event.on('wakeword', () => {
+        event.emit('servo-move', 'alert')
+        event.emit('play-sound', 'alert.wav')
+    })
 
-	// AUDIO PLAYBACK
-	event.on('play-sound', (data) => {
-   	//	 startDance();
-    		speak.playSound(data);
-	});
-	event.on('set-volume', speak.setVolume)
+    event.on('wakeword', stt.prepare)
+    event.on('wakeword', () => event.emit('speech-to-text'))
 
-	// BUTTON PRESSES
-	// btn-16 = "back right": short = reload renderer, long = shutdown Pi
-	event.on('btn-16-short-press', () => {
-		debug('[btn] 16 short press → refresh')
-		power.refresh()
-	})
-	event.on('btn-16-long-press', () => {
-		debug('[btn] 16 long press → shutdown')
-		power.shutdown()
-	})
+    event.on('final-transcript', () => {
+        if (mediaWasPaused) {
+            mediaWasPaused = false
+            event.emit('stop-media')
+        }
+    })
 
+    event.on('final-transcript', (data) => {
+        const transcript = (data.text || '').toLowerCase()
 
-	// btn-4, btn-17, btn-23: unassigned — add behaviour here
-	event.on('btn-4-short-press',  () => {})
-	event.on('btn-4-long-press',   () => {})
-	event.on('btn-17-short-press', () => {})
-	event.on('btn-17-long-press',  () => {})
-	
-    //btn-23 back left
+        debug('[indicator] final-transcript:', transcript)
+        loadEl.className = 'active'
+
+        if (handleDanceCommand(transcript)) return
+        if (handleLightsCommand(transcript)) return
+        if (handleCameraCommand(transcript)) return
+
+        if (transcript.includes('light')) {
+            debug('[HA] skipping Claude for light command')
+            return
+        }
+
+        claude.handleTranscript(data)
+    })
+
+    event.on('show-speech-bubble', (msg) => textBubble.showBubble(msg))
+
+    event.on('no-command', () => {
+        if (global.commandHandled) {
+            global.commandHandled = false
+            return
+        }
+
+        event.emit('led-on', { anim: 'fadeOutError', color: 'red' })
+    })
+
+    event.on('speech-to-text', () => debug('[listeners] speech-to-text event received'))
+    event.on('speech-to-text', stt.startAudio)
+
+    event.on('end-speech-to-text', () => {
+        if (process.env.OS === 'unsupported') {
+            document.getElementById('wakeword').style.backgroundColor = ''
+        }
+
+        if (mediaWasPaused) {
+            mediaWasPaused = false
+            event.emit('resume-media')
+        }
+
+        event.emit('mic-pause')
+        event.emit('mic-resume')
+    })
+
+    event.on('show-div', common.showDiv)
+
+    const webview = document.getElementById('webView')
+    let currentWebUrl = null
+
+    webview.addEventListener('did-fail-load', (e) => {
+        if (e.errorCode === -3) return
+        if (e.validatedURL !== currentWebUrl) return
+
+        console.error(`[webview] failed to load (${e.errorCode}): ${e.errorDescription}`)
+
+        currentWebUrl = null
+        common.showDiv('eyeWrapper')
+        webview.loadURL('about:blank')
+    })
+
+    event.on('show-web-page', (url) => {
+        currentWebUrl = url
+        webview.src = url
+        common.showDiv('webWrapper')
+    })
+
+    event.on('clear-web-page', () => {
+        currentWebUrl = null
+        webview.loadURL('about:blank')
+    })
+
+    event.on('plane-overhead', (plane) => {
+        console.log('[plane] reaction:', JSON.stringify(plane))
+
+        const message = plane.airline
+            ? `${plane.airline} ${plane.callsign}`
+            : plane.callsign
+
+        const overlay = document.getElementById('planeInfoOverlay')
+
+        if (overlay) {
+            overlay.style.display = 'none'
+            overlay.innerHTML = ''
+        }
+
+        event.emit('servo-move', 'look-up-slow')
+        speak.playSound('camera-toy.wav')
+
+        event.emit('led-on', {
+            anim: 'planeScan',
+            color: 'blue'
+        })
+
+        fetch('http://192.168.1.182:5055/random/planes')
+            .then(res => res.json())
+            .then(gif => {
+                console.log(`[MAC GIF] planes: ${gif.url}`)
+
+                event.emit('set-answer', {
+                    type: 'url',
+                    url: gif.url,
+                    ans: '',
+                    loop: true,
+                    minDuration: 4000
+                })
+            })
+            .catch(err => {
+                console.log('[MAC GIF] planes error:', err)
+
+                event.emit('set-answer', {
+                    type: 'remote',
+                    queryTerms: 'airplane flying overhead',
+                    loop: true,
+                    minDuration: 4000
+                })
+            })
+
+        setTimeout(() => {
+            console.log('[plane] returning to eyes with caption')
+
+            event.emit('show-div', 'eyeWrapper')
+            event.emit('transition-eyes-back')
+
+            if (overlay) {
+                overlay.innerHTML = `
+                    ✈ Plane overhead
+                    <span class="small">${message}</span>
+                    <span class="small">Altitude ${plane.altitudeText}</span>
+                `
+                overlay.style.display = 'block'
+            } else {
+                console.log('[plane] overlay element not found')
+            }
+        }, 6000)
+
+        setTimeout(() => {
+            console.log('[plane] clearing plane overlay')
+
+            if (overlay) {
+                overlay.style.display = 'none'
+                overlay.innerHTML = ''
+            }
+
+            event.emit('led-off')
+            event.emit('servo-reset')
+        }, 16000)
+    })
+
+    event.on('shutdown', power.shutdown)
+    event.on('reboot', power.reboot)
+    event.on('refresh', power.refresh)
+
+    event.on('mic-pause', () => mic.pause())
+    event.on('mic-resume', () => {
+        mic.resume()
+        event.emit('pipe-to-wakeword')
+    })
+
+    event.on('play-sound', (data) => {
+        speak.playSound(data)
+    })
+
+    event.on('set-volume', speak.setVolume)
+
+    event.on('btn-16-short-press', () => {
+        debug('[btn] 16 short press → refresh')
+        power.refresh()
+    })
+
+    event.on('btn-16-long-press', () => {
+        debug('[btn] 16 long press → shutdown')
+        power.shutdown()
+    })
+
+    event.on('btn-4-short-press', () => {})
+    event.on('btn-4-long-press', () => {})
+    event.on('btn-17-short-press', () => {})
+    event.on('btn-17-long-press', () => {})
+
     event.on('btn-23-long-press', () => {
-    debug('[btn] 23 long press → restart peeqo')
-    const { exec } = require('child_process')
-    exec('pkill -f "electron ."')
-})
-    
-	let screenDimmed = false;
+        debug('[btn] 23 long press → restart peeqo')
+        const { exec } = require('child_process')
+        exec('pkill -f "electron ."')
+    })
 
-event.on('btn-23-short-press', () => {
-    const dimmer = document.getElementById('screenDimmer');
+    let screenDimmed = false
 
-    if (!dimmer) return;
+    event.on('btn-23-short-press', () => {
+        const dimmer = document.getElementById('screenDimmer')
 
-    screenDimmed = !screenDimmed;
+        if (!dimmer) return
 
-    if (screenDimmed) {
-        dimmer.style.display = 'block';
-        setTimeout(() => dimmer.style.opacity = '0.9', 10);
-    } else {
-        dimmer.style.opacity = '0';
-        setTimeout(() => dimmer.style.display = 'none', 300);
-    }
-});
+        screenDimmed = !screenDimmed
 
+        if (screenDimmed) {
+            dimmer.style.display = 'block'
+            setTimeout(() => {
+                dimmer.style.opacity = '0.9'
+            }, 10)
+        } else {
+            dimmer.style.opacity = '0'
+            setTimeout(() => {
+                dimmer.style.display = 'none'
+            }, 300)
+        }
+    })
 }

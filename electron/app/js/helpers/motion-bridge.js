@@ -7,102 +7,124 @@ const macGif = require("js/helpers/mac-gif");
 
 const PORT = 8767;
 
-let sleepTimers = [];
+let timers = [];
+let sleepState = "awake";
 
-function addSleepTimer(fn, delay) {
+function addTimer(fn, delay) {
     const timer = setTimeout(() => {
-        sleepTimers = sleepTimers.filter((t) => t !== timer);
+        timers = timers.filter((t) => t !== timer);
         fn();
     }, delay);
 
-    sleepTimers.push(timer);
+    timers.push(timer);
     return timer;
 }
 
-function clearSleepTimers() {
-    for (const timer of sleepTimers) {
+function clearTimers() {
+    for (const timer of timers) {
         clearTimeout(timer);
     }
+    timers = [];
+}
 
-    sleepTimers = [];
+function reply(res, text) {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end(`${text}\n`);
 }
 
 class MotionBridge {
     constructor() {
         this.server = http.createServer((req, res) => {
             const url = req.url || "/";
+            const force = url.includes("force=1");
 
             if (url.startsWith("/health")) {
-                res.writeHead(200, { "Content-Type": "text/plain" });
-                res.end("ok\n");
+                reply(res, `ok ${sleepState}`);
+                return;
+            }
+
+            if (url.startsWith("/state")) {
+                reply(res, `state=${sleepState} timers=${timers.length}`);
                 return;
             }
 
             if (url.startsWith("/reset-servo")) {
                 debug("[motion-bridge] reset-servo");
 
-                clearSleepTimers();
+                clearTimers();
+                sleepState = "awake";
+                event.emit("peeqo-awake-eyes");
                 event.emit("servo-reset");
 
-                res.writeHead(200, { "Content-Type": "text/plain" });
-                res.end("reset-servo\n");
+                reply(res, "reset-servo");
                 return;
             }
 
             if (url.startsWith("/sleep-eyes")) {
                 debug("[motion-bridge] sleep-eyes test");
-
                 event.emit("peeqo-sleep-eyes");
-
-                res.writeHead(200, { "Content-Type": "text/plain" });
-                res.end("sleep-eyes\n");
+                reply(res, "sleep-eyes");
                 return;
             }
 
             if (url.startsWith("/awake-eyes")) {
                 debug("[motion-bridge] awake-eyes test");
-
                 event.emit("peeqo-awake-eyes");
-
-                res.writeHead(200, { "Content-Type": "text/plain" });
-                res.end("awake-eyes\n");
+                reply(res, "awake-eyes");
                 return;
             }
 
             if (url.startsWith("/snooze")) {
-                debug("[motion-bridge] snooze sequence");
+                debug(`[motion-bridge] snooze requested, state=${sleepState}`);
 
-                clearSleepTimers();
+                if ((sleepState === "entering-sleep" || sleepState === "sleeping" || sleepState === "waking") && !force) {
+                    reply(res, `already-${sleepState}`);
+                    return;
+                }
 
-                event.emit("servo-reset");
+                clearTimers();
+                sleepState = "entering-sleep";
+                reply(res, "snooze");
 
                 macGif.showMacGif("sleepy", "sleepy reaction", 5000);
 
-                addSleepTimer(() => {
-                    event.emit("show-div", "eyeWrapper");
-                }, 5200);
+                addTimer(() => {
+                    if (sleepState !== "entering-sleep") {
+                        debug(`[motion-bridge] snooze skipped, state=${sleepState}`);
+                        return;
+                    }
 
-                addSleepTimer(() => {
+                    event.emit("show-div", "eyeWrapper");
                     event.emit("peeqo-sleep-eyes");
+                    event.emit("servo-move", "snooze");
+
+                    sleepState = "sleeping";
+                    debug("[motion-bridge] state=sleeping");
                 }, 5600);
 
-                addSleepTimer(() => {
-                    event.emit("servo-move", "snooze");
-                }, 5900);
-
-                res.writeHead(200, { "Content-Type": "text/plain" });
-                res.end("snooze\n");
                 return;
             }
 
             if (url.startsWith("/wake-up")) {
-                debug("[motion-bridge] wake-up");
+                debug(`[motion-bridge] wake-up requested, state=${sleepState}`);
 
-                clearSleepTimers();
+                if (sleepState === "waking" && !force) {
+                    reply(res, "already-waking");
+                    return;
+                }
+
+                if (sleepState === "awake" && !force) {
+                    event.emit("peeqo-awake-eyes");
+                    reply(res, "already-awake");
+                    return;
+                }
+
+                clearTimers();
+                sleepState = "waking";
+                reply(res, "wake-up");
 
                 event.emit("show-div", "eyeWrapper");
                 event.emit("peeqo-awake-eyes");
-
                 event.emit("servo-move", "wake-startled");
 
                 event.emit("led-on", {
@@ -110,16 +132,16 @@ class MotionBridge {
                     color: "red",
                 });
 
-                setTimeout(() => {
-                    event.emit("servo-reset");
-                }, 2500);
-
-                setTimeout(() => {
+                addTimer(() => {
                     macGif.showMacGif("wake_grumpy", "grumpy wake up reaction", 5000);
                 }, 700);
 
-                res.writeHead(200, { "Content-Type": "text/plain" });
-                res.end("wake-up\n");
+                // Do not servo-reset here. wake-startled.json should finish at neutral.
+                addTimer(() => {
+                    sleepState = "awake";
+                    debug("[motion-bridge] state=awake");
+                }, 5000);
+
                 return;
             }
 

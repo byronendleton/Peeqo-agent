@@ -24,6 +24,7 @@ const ANIM_DIR = path.join(__dirname, "app", "media", "servo_anims");
 
 let pwm = null;
 let servoTimer = null;
+let currentAnim = null;;
 
 function setup() {
     let i2cBus, PCA9685;
@@ -65,9 +66,11 @@ function setup() {
 
 function reset() {
     if (servoTimer !== null) {
-        clearInterval(servoTimer);
+        clearTimeout(servoTimer);
         servoTimer = null;
     }
+
+    currentAnim = null;
 
     if (!pwm) return;
 
@@ -119,37 +122,59 @@ function animate(animName) {
         reset();
 
         let index = 0;
-        const playbackRate = animName === "snooze" ? SNOOZE_PLAYBACK_RATE_MS : PLAYBACK_RATE_MS;
+const playbackRate = animName === "snooze" ? SNOOZE_PLAYBACK_RATE_MS : PLAYBACK_RATE_MS;
 
-        servoTimer = setInterval(() => {
-            const frame = data[index];
+currentAnim = animName;
 
-            if (!Array.isArray(frame) || frame.length < 3) {
-                console.error(`[servo-main] bad frame ${index} in ${animName}`);
-                reset();
-                return;
-            }
+function playNextFrame() {
+    if (currentAnim !== animName) {
+        debug(`[servo-main] ${animName} stopped because currentAnim=${currentAnim}`);
+        return;
+    }
 
-            for (let i = 0; i < 3; i++) {
-                const pulse = Number(frame[i]);
+    const frame = data[index];
 
-                if (!Number.isFinite(pulse)) {
-                    console.error(`[servo-main] invalid pulse on servo ${i}, frame ${index}, in ${animName}`);
-                    continue;
-                }
-
-                pwm.setPulseLength(i, clampPulse(pulse));
-            }
-
-            index++;
-
-            if (index >= data.length) {
-                debug(`[servo-main] finished animation: ${animName}`);
-                clearInterval(servoTimer);
-                servoTimer = null;
-            }
-        }, playbackRate);
-    });
+    if (index % 10 === 0) {
+    debug(`[servo-main] ${animName} frame ${index}/${data.length}: ${frame.join(",")}`);
 }
 
+    if (!Array.isArray(frame) || frame.length < 3) {
+        console.error(`[servo-main] bad frame ${index} in ${animName}`);
+        servoTimer = null;
+        currentAnim = null;
+        reset();
+        return;
+    }
+
+    for (let i = 0; i < 3; i++) {
+        const pulse = Number(frame[i]);
+
+        if (!Number.isFinite(pulse)) {
+            console.error(`[servo-main] invalid pulse on servo ${i}, frame ${index}, in ${animName}`);
+            servoTimer = null;
+            currentAnim = null;
+            reset();
+            return;
+        }
+
+        pwm.setPulseLength(i, clampPulse(pulse));
+    }
+
+    index++;
+
+    if (index >= data.length) {
+        debug(`[servo-main] finished animation: ${animName}`);
+        servoTimer = null;
+        currentAnim = null;
+        return;
+    }
+
+    servoTimer = setTimeout(playNextFrame, playbackRate);
+}
+
+debug(`[servo-main] starting animation: ${animName}, frames=${data.length}, rate=${playbackRate}ms`);
+playNextFrame();
+        });
+
+}
 module.exports = { setup };
