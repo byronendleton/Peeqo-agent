@@ -11,7 +11,7 @@ const fs = require("fs");
 const debug = require("./app/js/helpers/debug");
 
 const PLAYBACK_RATE_MS = 45; 
-const SNOOZE_PLAYBACK_RATE_MS = 100;
+const SNOOZE_PLAYBACK_RATE_MS = 120;
 //const PLAYBACK_RATE_MS = 33;
 const REST_PULSE_US = 1500;
 
