@@ -15,7 +15,7 @@ MOTION_THRESHOLD = 8.0
 # Sleep / dim timing
 SNOOZE_AFTER = 240      # 4 min
 DIM_AFTER = 300         # 5 min
-ENTERING_SLEEP_GRACE = 35
+ENTERING_SLEEP_GRACE = 30
 
 # For testing:
 # SNOOZE_AFTER = 30
